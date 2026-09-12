@@ -1,0 +1,6 @@
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+# 한글이 열어둔 파일의 잠금 파일
+~$*
