@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>공문 hwpx 생성기</title>
+<style>
+  :root {
+    --ink: #1d232b;
+    --ink-2: #4a5462;
+    --ink-3: #7b8594;
+    --line: #d9dee5;
+    --line-2: #eceff3;
+    --paper: #ffffff;
+    --ground: #f3f4f6;
+    --accent: #1f4e8c;
+    --accent-2: #e8eef7;
+    --ok: #1f7a4d;
+    --ok-bg: #e7f4ec;
+    --warn: #8a5a00;
+    --warn-bg: #fbf1dc;
+    --err: #a1261b;
+    --err-bg: #fbe9e7;
+    --radius: 10px;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font: 15px/1.6 "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+  }
+  header.top {
+    background: var(--paper);
+    border-bottom: 1px solid var(--line);
+  }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 0 24px; }
+  header.top .wrap { display: flex; align-items: baseline; gap: 16px; padding-top: 18px; padding-bottom: 16px; flex-wrap: wrap; }
+  header.top h1 { font-size: 20px; margin: 0; letter-spacing: -0.3px; }
+  header.top p { margin: 0; color: var(--ink-2); font-size: 14px; }
+
+  main.wrap { display: grid; grid-template-columns: minmax(0, 520px) minmax(0, 1fr); gap: 24px; padding-top: 24px; padding-bottom: 48px; }
+  @media (max-width: 980px) { main.wrap { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); }
+  .step { padding: 18px 20px 20px; }
+  .step + .step { border-top: 1px solid var(--line-2); }
+  .step h2 { display: flex; align-items: center; gap: 10px; font-size: 16px; margin: 0 0 6px; }
+  .step h2 .num { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 13px; }
+  .step .desc { margin: 0 0 12px; color: var(--ink-2); font-size: 14px; }
+
+  textarea, input[type=text] {
+    width: 100%;
+    font: 13.5px/1.55 ui-monospace, "D2Coding", Consolas, "Malgun Gothic", monospace;
+    color: var(--ink);
+    background: #fbfbfc;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    resize: vertical;
+  }
+  textarea.plain { font-family: inherit; font-size: 14px; }
+  textarea:focus, input:focus { outline: 2px solid var(--accent-2); border-color: var(--accent); }
+  #material { min-height: 96px; }
+  #json { min-height: 340px; }
+
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  button, .filebtn {
+    font: inherit; font-size: 14px;
+    border: 1px solid var(--line); background: var(--paper); color: var(--ink);
+    padding: 7px 14px; border-radius: 8px; cursor: pointer;
+  }
+  button:hover, .filebtn:hover { border-color: var(--ink-3); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover { background: #173d6f; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .big { padding: 11px 20px; font-size: 15px; }
+  .hint { color: var(--ink-3); font-size: 13px; }
+  .filebtn input { display: none; }
+
+  .msgs { margin-top: 12px; display: grid; gap: 6px; }
+  .msg { font-size: 13.5px; padding: 8px 12px; border-radius: 8px; }
+  .msg.err { background: var(--err-bg); color: var(--err); }
+  .msg.warn { background: var(--warn-bg); color: var(--warn); }
+  .msg.ok { background: var(--ok-bg); color: var(--ok); }
+
+  details.adv { padding: 14px 20px 18px; border-top: 1px solid var(--line-2); }
+  details.adv summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  details.adv p { font-size: 13.5px; color: var(--ink-2); margin: 8px 0; }
+
+  /* 미리보기: 한글 문서 느낌의 종이 */
+  .preview-head { display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line-2); gap: 12px; flex-wrap: wrap; }
+  .preview-head h2 { font-size: 16px; margin: 0; }
+  .preview-scroll { padding: 24px; overflow: auto; max-height: calc(100vh - 150px); background: #e9ebee; border-radius: 0 0 var(--radius) var(--radius); }
+  .sheet {
+    width: 100%; max-width: 760px; margin: 0 auto; background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.12); padding: 44px 52px 56px;
+    font-family: "HY헤드라인M", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; color: #000;
+  }
+  .empty { color: var(--ink-3); text-align: center; padding: 80px 20px; font-family: "Malgun Gothic", sans-serif; }
+  .d-banner { display: grid; grid-template-columns: auto 1fr; align-items: stretch; border-top: 3px solid #1f3a64; border-bottom: 1px solid #1f3a64; margin-bottom: 14px; }
+  .d-team { padding: 10px 14px; font-size: 13px; color: #1f3a64; font-weight: 700; display: grid; place-items: center; border-right: 1px solid #c9d2e0; }
+  .d-titles { padding: 8px 14px; text-align: center; }
+  .d-sub { font-size: 14px; color: #333; }
+  .d-title { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+  .d-summary { border: 1px solid #9aa7bb; background: #f5f7fb; padding: 10px 14px; font-size: 14.5px; margin-bottom: 18px; }
+  .d-summary b { color: #1f3a64; margin-right: 4px; }
+  .d-sec { display: flex; align-items: stretch; margin: 20px 0 8px; }
+  .d-sec .n { background: #1f3a64; color: #fff; width: 32px; display: grid; place-items: center; font-weight: 700; }
+  .d-sec .t { flex: 1; border-bottom: 2px solid #1f3a64; padding: 3px 10px; font-size: 17px; font-weight: 700; }
+  .d-box { font-size: 15px; margin: 8px 0 2px; padding-left: 1.6em; text-indent: -1.6em; font-family: "Malgun Gothic", sans-serif; }
+  .d-box .lb { font-weight: 700; }
+  .d-sub-i { font-size: 15px; margin: 2px 0; padding-left: 3.1em; text-indent: -1.4em; font-family: "Malgun Gothic", sans-serif; }
+  .d-note { font-size: 13px; margin: 2px 0; padding-left: 2.6em; text-indent: -1.2em; color: #222; font-family: "Malgun Gothic", sans-serif; }
+  .d-text { font-size: 15px; margin: 8px 0; font-family: "Malgun Gothic", sans-serif; }
+  .d-table { width: 100%; border-collapse: collapse; margin: 8px 0 6px; font-size: 13px; font-family: "Malgun Gothic", sans-serif; }
+  .d-table th, .d-table td { border: 1px solid #555; padding: 5px 8px; vertical-align: middle; }
+  .d-table th { background: #dfe5ee; font-weight: 700; text-align: center; }
+  .d-table td.key { text-align: center; font-weight: 700; background: #f4f6f9; }
+  .d-table ul { margin: 0; padding-left: 1.1em; }
+  .d-attach { margin-top: 22px; font-size: 15px; font-family: "Malgun Gothic", sans-serif; white-space: pre; }
+  .d-appr { display: flex; justify-content: flex-end; gap: 0; margin-bottom: 18px; font-family: "Malgun Gothic", sans-serif; font-size: 12px; }
+  .d-appr div { border: 1px solid #777; margin-left: -1px; min-width: 78px; text-align: center; }
+  .d-appr .p { background: #f1f3f6; border-bottom: 1px solid #777; padding: 2px 4px; }
+  .d-appr .nm { padding: 8px 4px; min-height: 34px; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #1d232b; color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <h1>공문 hwpx 생성기</h1>
+    <p>AI가 쓴 내용을 결재표·표지·개조식 서식이 갖춰진 한글 파일로 바꿉니다. 모든 처리는 이 브라우저 안에서만 이뤄지고 어디로도 전송되지 않습니다.</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="panel" aria-label="입력">
+    <div class="step">
+      <h2><span class="num">1</span>AI에게 보낼 요청문 만들기</h2>
+      <p class="desc">쓰고 싶은 문서와 참고 자료를 적고 요청문을 복사하세요. ChatGPT, Claude, Gemini 등 어느 AI에 붙여넣어도 됩니다.</p>
+      <textarea id="material" class="plain" placeholder="예) 우리 팀(AI전환팀)이 개발한 착한주유소 가격 현황판 구축 계획(안)을 써줘. 사업관리팀이 가격을 관리하고 우리가 웹을 개발함. 아래는 프로젝트 README 내용…"></textarea>
+      <div class="row">
+        <button id="copyPrompt" class="primary">요청문 복사</button>
+        <span class="hint">작성 규칙과 JSON 형식이 함께 복사됩니다.</span>
+      </div>
+    </div>
+
+    <div class="step">
+      <h2><span class="num">2</span>AI가 준 JSON 붙여넣기</h2>
+      <p class="desc">AI 답변 중 JSON 부분을 붙여넣으세요. 앞뒤 설명이나 ``` 표시가 섞여 있어도 알아서 걸러냅니다.</p>
+      <textarea id="json" spellcheck="false" placeholder='{ "title": "…", "sections": [ … ] }'></textarea>
+      <div class="row">
+        <button id="loadExample">예시 불러오기</button>
+        <button id="formatJson">정리하기</button>
+        <span class="hint" id="stat"></span>
+      </div>
+      <div class="msgs" id="msgs" aria-live="polite"></div>
+    </div>
+
+    <div class="step">
+      <h2><span class="num">3</span>한글 파일 내려받기</h2>
+      <p class="desc">파일 이름은 "(부서)제목_날짜시각" 형식으로 자동으로 정해집니다.</p>
+      <input type="text" id="fileName" aria-label="파일 이름">
+      <div class="row">
+        <button id="download" class="primary big" disabled>hwpx 내려받기</button>
+      </div>
+    </div>
+
+    <details class="adv">
+      <summary>우리 부서 서식 쓰기</summary>
+      <p>이 생성기용으로 준비한 서식 hwpx를 올리면 그 모양으로 만듭니다. 서식 만드는 법은 스킬 폴더의 <code>references/template-guide.md</code>에 있습니다.</p>
+      <div class="row">
+        <label class="filebtn">서식 파일 선택<input type="file" id="tplFile" accept=".hwpx"></label>
+        <button id="tplReset">기본 서식으로</button>
+        <button id="tplDownload">기본 서식 내려받기</button>
+      </div>
+      <div class="msgs" id="tplMsg"></div>
+    </details>
+  </section>
+
+  <section class="panel" aria-label="미리보기">
+    <div class="preview-head">
+      <h2>미리보기</h2>
+      <span class="hint">구성을 확인하는 용도입니다. 실제 모양은 한글에서 확인하세요.</span>
+    </div>
+    <div class="preview-scroll">
+      <div class="sheet" id="sheet"><div class="empty">JSON을 붙여넣으면 여기에 문서 구성이 보입니다.</div></div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script>/*__CORE__*/</script>
+<script>
+const DEFAULT_TEMPLATE_B64 = "/*__TEMPLATE_B64__*/";
+const EXAMPLE = /*__EXAMPLE__*/null;
+const PROMPT_GUIDE = /*__PROMPT__*/"";
+</script>
+<script>
+(() => {
+  const G = window.HwpxGongmun;
+  const $ = (id) => document.getElementById(id);
+  const b64ToBytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+  };
+
+  let template = null;
+  let templateName = '기본 서식';
+  let currentSpec = null;
+  let fileNameTouched = false;
+
+  function toast(text) {
+    const t = $('toast');
+    t.textContent = text;
+    t.classList.add('show');
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => t.classList.remove('show'), 1800);
+  }
+
+  function msg(box, kind, text) {
+    const d = document.createElement('div');
+    d.className = 'msg ' + kind;
+    d.textContent = text;
+    box.appendChild(d);
+  }
+
+  async function useDefaultTemplate() {
+    template = await G.loadTemplate(b64ToBytes(DEFAULT_TEMPLATE_B64));
+    templateName = '기본 서식';
+    $('tplMsg').innerHTML = '';
+    msg($('tplMsg'), 'ok', '지금 쓰는 서식: 기본 서식');
+  }
+
+  // AI 답변에서 JSON 덩어리만 뽑는다.
+  function extractJson(raw) {
+    let s = raw.trim();
+    const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fence) s = fence[1].trim();
+    const a = s.indexOf('{');
+    const b = s.lastIndexOf('}');
+    if (a > 0 || (b >= 0 && b < s.length - 1)) s = s.slice(a, b + 1);
+    s = s.replace(/[“”]/g, '"').replace(/,\s*([}\]])/g, '$1');
+    return JSON.parse(s);
+  }
+
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const bracket = (s) => (s ? (/^「[\s\S]*」$/.test(s.trim()) ? s.trim() : '「' + s.trim() + '」') : '');
+
+  function renderPreview(s) {
+    const out = [];
+    const ap = s.approval && s.approval.length ? s.approval : [{ position: '담당' }, { position: (s.team || '') + '장' }, { position: '' }];
+    out.push('<div class="d-appr">' + ap.slice(0, 3).map((a) => '<div><div class="p">' + esc(a.position || ' ') + '</div><div class="nm">' + esc(a.name || '') + '</div></div>').join('') + '</div>');
+    out.push('<div class="d-banner"><div class="d-team">' + esc(s.team || '부서') + '</div><div class="d-titles">' +
+      (s.subtitle || s.coverSubtitle ? '<div class="d-sub">' + esc(bracket(s.subtitle || s.coverSubtitle)) + '</div>' : '') +
+      '<div class="d-title">' + esc(s.title || '(제목 없음)') + '</div></div></div>');
+    if (s.summary) out.push('<div class="d-summary"><b>▸</b>' + esc(s.summary) + '</div>');
+    s.sections.forEach((sec, i) => {
+      out.push('<div class="d-sec"><div class="n">' + (G.ROMAN[i] || i + 1) + '</div><div class="t">' + esc(sec.title) + '</div></div>');
+      sec.items.forEach((it) => {
+        if (it.type === 'box') out.push('<p class="d-box">□ ' + (it.label ? '<span class="lb">(' + esc(it.label) + ')</span> ' : '') + esc(it.text) + '</p>');
+        else if (it.type === 'sub') out.push('<p class="d-sub-i">ㅇ ' + esc(it.text) + '</p>');
+        else if (it.type === 'note') out.push('<p class="d-note">* ' + esc(it.text) + '</p>');
+        else if (it.type === 'text') out.push('<p class="d-text">' + esc(it.text) + '</p>');
+        else if (it.type === 'table' && Array.isArray(it.rows)) {
+          const cell = (v) => (Array.isArray(v) ? '<ul>' + v.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' : esc(v).replace(/\n/g, '<br>'));
+          let t = '<table class="d-table">';
+          if (it.columns && it.columns.length) t += '<tr>' + it.columns.map((c) => '<th>' + esc(c) + '</th>').join('') + '</tr>';
+          it.rows.forEach((r) => {
+            t += '<tr>' + (Array.isArray(r) ? r : []).map((v, ci) => '<td class="' + (ci === 0 && it.keyColumn !== false && r.length > 1 ? 'key' : '') + '">' + cell(v) + '</td>').join('') + '</tr>';
+          });
+          out.push(t + '</table>');
+        }
+      });
+    });
+    if (s.attachments && s.attachments.length) {
+      const many = s.attachments.length > 1;
+      const lines = s.attachments.map((a, i) => {
+        let line = String(a).trim();
+        if (!/부\.?$/.test(line)) line += '  1부.';
+        if (!line.endsWith('.')) line += '.';
+        return (i === 0 ? '붙임  ' : '      ') + (many ? (i + 1) + '. ' : '') + line + (i === s.attachments.length - 1 ? '  끝.' : '');
+      });
+      out.push('<div class="d-attach">' + esc(lines.join('\n')) + '</div>');
+    }
+    $('sheet').innerHTML = out.join('');
+  }
+
+  function refresh() {
+    const raw = $('json').value;
+    store.set('gongmun.json', raw);
+    const box = $('msgs');
+    box.innerHTML = '';
+    currentSpec = null;
+    $('download').disabled = true;
+    $('stat').textContent = '';
+    if (!raw.trim()) {
+      $('sheet').innerHTML = '<div class="empty">JSON을 붙여넣으면 여기에 문서 구성이 보입니다.</div>';
+      return;
+    }
+    let spec;
+    try {
+      spec = extractJson(raw);
+    } catch (e) {
+      msg(box, 'err', 'JSON 문법 오류: ' + e.message + '. AI에게 "JSON만 다시 보내줘"라고 요청해 보세요.');
+      return;
+    }
+    const { errors, warnings, spec: s } = G.validateSpec(spec);
+    renderPreview(s);
+    errors.forEach((e) => msg(box, 'err', e));
+    warnings.forEach((w) => msg(box, 'warn', w));
+    const itemCount = s.sections.reduce((a, sec) => a + sec.items.length, 0);
+    $('stat').textContent = s.sections.length + '개 장 · ' + itemCount + '개 항목';
+    if (!errors.length) {
+      msg(box, 'ok', '생성할 수 있습니다. (' + templateName + ')');
+      currentSpec = spec;
+      $('download').disabled = false;
+      if (!fileNameTouched) $('fileName').value = G.suggestFileName(s);
+    }
+  }
+
+  $('json').addEventListener('input', () => { clearTimeout(refresh.t); refresh.t = setTimeout(refresh, 250); });
+  $('fileName').addEventListener('input', () => { fileNameTouched = true; });
+
+  $('loadExample').addEventListener('click', () => {
+    $('json').value = JSON.stringify(EXAMPLE, null, 2);
+    fileNameTouched = false;
+    refresh();
+  });
+
+  $('formatJson').addEventListener('click', () => {
+    try { $('json').value = JSON.stringify(extractJson($('json').value), null, 2); refresh(); }
+    catch (e) { toast('JSON을 해석할 수 없어 정리하지 못했습니다'); }
+  });
+
+  $('copyPrompt').addEventListener('click', async () => {
+    const material = $('material').value.trim();
+    store.set('gongmun.material', $('material').value);
+    const text = PROMPT_GUIDE + '\n\n## 작성할 문서와 참고 자료\n' + (material || '(여기에 쓰고 싶은 문서와 자료를 적어주세요)');
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove();
+    }
+    toast('요청문을 복사했습니다. AI 대화창에 붙여넣으세요');
+  });
+
+  function saveBytes(bytes, name) {
+    const blob = new Blob([bytes], { type: 'application/hwp+zip' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }
+
+  $('download').addEventListener('click', async () => {
+    if (!currentSpec) return;
+    const btn = $('download');
+    btn.disabled = true;
+    try {
+      const bytes = await G.buildHwpx(currentSpec, template);
+      let name = $('fileName').value.trim() || G.suggestFileName(currentSpec);
+      if (!/\.hwpx$/i.test(name)) name += '.hwpx';
+      saveBytes(bytes, name);
+      toast('내려받았습니다');
+    } catch (e) {
+      msg($('msgs'), 'err', e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $('tplFile').addEventListener('change', async (ev) => {
+    const f = ev.target.files[0];
+    if (!f) return;
+    $('tplMsg').innerHTML = '';
+    try {
+      template = await G.loadTemplate(new Uint8Array(await f.arrayBuffer()));
+      templateName = f.name;
+      msg($('tplMsg'), 'ok', '지금 쓰는 서식: ' + f.name + ' (원형 ' + Object.keys(template.tpl.proto).length + '종)');
+      refresh();
+    } catch (e) {
+      msg($('tplMsg'), 'err', e.message);
+      await useDefaultTemplate();
+    }
+    ev.target.value = '';
+  });
+  $('tplReset').addEventListener('click', async () => { await useDefaultTemplate(); refresh(); });
+  $('tplDownload').addEventListener('click', () => saveBytes(b64ToBytes(DEFAULT_TEMPLATE_B64), '공문_기본서식.hwpx'));
+
+  (async () => {
+    await useDefaultTemplate();
+    const saved = store.get('gongmun.json');
+    const savedMaterial = store.get('gongmun.material');
+    if (savedMaterial) $('material').value = savedMaterial;
+    if (saved) { $('json').value = saved; refresh(); }
+  })().catch((e) => msg($('msgs'), 'err', '초기화 실패: ' + e.message));
+})();
+</script>
+</body>
+</html>
