@@ -8,6 +8,8 @@ const skill = path.join(root, 'skill', 'hwpx-gongmun');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 
 const core = fs.readFileSync(path.join(skill, 'scripts', 'core.js'), 'utf8');
+// 명령줄 부분(require.main)은 브라우저에서 필요 없으므로 잘라낸다.
+const doctypes = fs.readFileSync(path.join(skill, 'scripts', 'doctypes.js'), 'utf8').split('/* ---------------- 명령줄 ---------------- */')[0];
 const template = fs.readFileSync(path.join(skill, 'templates', 'default.hwpx')).toString('base64');
 const example = JSON.parse(fs.readFileSync(path.join(skill, 'examples', 'good-station.json'), 'utf8'));
 const prompt = read('web-src/prompt.md');
@@ -19,6 +21,7 @@ const put = (marker, value) => {
   html = html.split(marker).join(value);
 };
 put('/*__CORE__*/', safeJs(core));
+put('/*__DOCTYPES__*/', safeJs(doctypes));
 put('/*__TEMPLATE_B64__*/', template);
 put('/*__EXAMPLE__*/null', safeJs(JSON.stringify(example)));
 put('/*__PROMPT__*/""', safeJs(JSON.stringify(prompt)));
