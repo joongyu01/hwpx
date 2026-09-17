@@ -4,15 +4,26 @@ AI가 쓴 내용을 결재표·표지·Ⅰ/Ⅱ 장 제목·□/ㅇ/* 개조식 �
 
 hwpx를 처음부터 새로 짓지 않고, 실제 결재 문서에서 뽑은 서식 원형의 문단·표를 복제해 글자만 바꾼다. 그래서 한글에서 서식이 깨지지 않는다.
 
-## 쓰는 방법 세 가지
+## 쓰는 방법
 
 | 누가 | 무엇을 | 방법 |
 |---|---|---|
 | Claude 사용자 | 스킬 | `dist/hwpx-gongmun.skill` 설치 후 "공문 써줘" |
+| 코드 실행되는 다른 AI (Codex·Cursor·Gemini CLI·ChatGPT 등) | 저장소 | `AGENTS.md`를 읽게 한다 |
 | 누구나(다른 AI 포함) | 웹 생성기 | `dist/공문생성기.html` 더블클릭 → 요청문 복사 → AI 답변 붙여넣기 → 내려받기 |
 | 개발자 | 명령줄 | `node skill/hwpx-gongmun/scripts/build.js 내용.json` |
 
 웹 생성기는 파일 하나짜리이며 외부 서버나 인터넷을 쓰지 않는다. 사내망에서도 그대로 열린다. 내용은 브라우저 밖으로 나가지 않는다.
+
+## 만들 수 있는 것
+
+- 결재표·표지·요약 상자·Ⅰ/Ⅱ 장 제목·□/ㅇ/* 개조식·표
+- **굵게 강조**: 문장 안 `**결론 구절**`이 굵게 들어간다
+- **요약 쪽**: 표지 다음 한 쪽 요약(□ 대분류, ○ (라벨) 항목, 비교 상자). 쪽 번호 없이 들어가고 본문은 새 쪽에서 시작
+- **첨부 쪽**: 본문 뒤 "첨부 N | 제목" 머리띠로 시작하는 의견·일정표·상세 로직 쪽
+- **점검**: 생성할 때 요일 불일치·두 칸 띄어쓰기·○○ 남음·`**` 짝을 경고하고, `scripts/verify.js`가 한글이 거부할 구조 문제를 찾는다
+
+문장·수치·요약·첨부를 어떻게 쓰는지는 `skill/hwpx-gongmun/references/writing-guide.md` 한 곳에 있다. 스킬, 웹 요청문, 다른 AI가 모두 이 파일을 쓴다.
 
 ## 문서 유형
 
@@ -56,14 +67,17 @@ skill/hwpx-gongmun/          ← 스킬 본체 (배포 단위)
   scripts/core.js            생성기 (Node·브라우저 공용, 의존성 없음)
   scripts/build.js           명령줄 생성
   scripts/inspect.js         hwpx 문단 구조 보기 (새 서식 만들 때)
+  scripts/verify.js          만든 hwpx가 한글에서 열릴 구조인지 점검
   scripts/hwp-preview.ps1    한글로 열어 PDF·PNG 저장 (Windows)
   templates/default.hwpx     기본 서식 원형
+  references/writing-guide.md  보고서 작성 규칙 + AI 요청문 (웹 요청문 원본)
   references/spec.md         내용 JSON 형식
   references/template-guide.md  부서 서식 등록 방법
   examples/good-station.json 예시
-web-src/                     웹 생성기 원본 (page.html, 요청문 prompt.md)
+web-src/page.html            웹 생성기 화면 원본
 web/index.html               빌드된 웹 생성기
-tools/                       서식 만들기·웹 빌드·배포 묶기
+tools/                       서식 만들기·요약/첨부 원형 옮기기·웹 빌드·배포 묶기
+AGENTS.md                    Claude 외 AI용 작업 안내
 ```
 
 ## 고친 뒤 다시 만들기
@@ -73,7 +87,13 @@ node tools/build-web.js
 node tools/package.js
 ```
 
-기본 서식을 원본 결재 문서에서 다시 뽑을 때는 `node tools/make-template.js <원본.hwpx> skill/hwpx-gongmun/templates/default.hwpx`를 쓴다. 이 스크립트는 AI전환팀 계획(안) 문서 구조에 맞춰져 있다.
+기본 서식을 원본 결재 문서에서 다시 뽑을 때는 `node tools/make-template.js <원본.hwpx> skill/hwpx-gongmun/templates/default.hwpx`를 쓴다. 이 스크립트는 AI전환팀 계획(안) 문서 구조에 맞춰져 있다. 이어서 요약 쪽·첨부 머리띠 원형을 옮겨 넣는다.
+
+```bash
+node tools/add-brief-prototypes.js <요약 쪽이 있는 원본.hwpx> <첨부 머리띠가 있는 원본.hwpx> skill/hwpx-gongmun/templates/default.hwpx
+node skill/hwpx-gongmun/scripts/build.js skill/hwpx-gongmun/examples/good-station.json -o 시험.hwpx
+node skill/hwpx-gongmun/scripts/verify.js 시험.hwpx
+```
 
 ## 알아둘 것
 

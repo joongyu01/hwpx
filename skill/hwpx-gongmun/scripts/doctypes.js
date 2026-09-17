@@ -140,12 +140,12 @@
       summaryHint: '○○을 추진한 결과 ○○ 성과를 거두었으며, 향후 ○○을 보완하고자 함',
       sections: [
         { title: '추진 개요', guide: '목적, 기간, 대상, 방법. 최초 계획 보고와 연결', labels: ['목적', '기간·대상'] },
-        { title: '추진 결과', guide: '계획 대비 실적을 수치로', labels: ['추진실적'], table: { columns: ['구분', '계획', '실적', '비고'], rows: [['○○', '○○건', '○○건', '']] } },
+        { title: '추진 결과', guide: '계획 대비 실적을 수치로. 대상별로 내용이 달랐으면 구분|대상A|대상B 비교표로 이원화. 만족도는 매우만족100·만족80·보통60·불만족40·매우불만족20점으로 응답 건수를 합쳐 환산하고, 평가 지표 문항과 참고 문항 표를 나눔', labels: ['추진실적'], table: { columns: ['구분', '계획', '실적', '비고'], rows: [['○○', '○○건', '○○건', '']] } },
         { title: '주요 성과', guide: '정량 성과와 정성 성과. 사진·통계는 붙임으로', labels: ['정량 성과', '정성 성과'] },
         { title: '문제점 및 개선사항', guide: '추진 중 드러난 문제와 원인, 개선 방향', labels: ['문제점', '개선방향'] },
         { title: '향후 계획', guide: '후속 조치와 다음 추진 시 고려사항', labels: ['후속조치'] },
       ],
-      extras: ['붙임: 사진, 통계, 설문 결과'],
+      extras: ['첨부: 참여자 의견 요약(익명, 한 쪽)', '첨부: 세부 일정표(회차·일자(요일)·대상·인원)', '첨부: 설문 결과표'],
     },
     {
       id: 'event-result',
@@ -304,7 +304,8 @@
       if (s.table) hint.push('표 권장: ' + s.table.columns.join(' | '));
       lines.push('  ' + (ROMAN[i] || i + 1) + '. ' + s.title + (s.optional ? ' (선택)' : '') + ' — ' + hint.join(' / '));
     });
-    if (t.extras && t.extras.length) lines.push('- 필요하면 장으로 추가: ' + t.extras.join(', '));
+    if (t.extras && t.extras.length) lines.push('- 필요하면 추가: ' + t.extras.join(', '));
+    lines.push('- 본문이 3쪽을 넘거나 요약을 원하면 brief(요약 쪽)를 넣고, 긴 표·의견·일정·상세 로직은 appendices(첨부 쪽)로 보낸다.');
     return lines.join('\n');
   }
 

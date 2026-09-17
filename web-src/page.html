@@ -141,6 +141,18 @@
   .d-table td.key { text-align: center; font-weight: 700; background: #f4f6f9; }
   .d-table ul { margin: 0; padding-left: 1.1em; }
   .d-attach { margin-top: 22px; font-size: 15px; white-space: pre; }
+  .d-page { border-top: 2px dashed #9aa7bb; margin: 26px 0 14px; padding-top: 4px; font-size: 11px; color: #6b7686; }
+  .d-brief-title { border: 2px solid #1f3a64; background: #eef2f8; text-align: center; padding: 8px 10px; margin-bottom: 10px; }
+  .d-brief-title .s { font-size: 14px; } .d-brief-title .t { font-size: 18px; font-weight: 700; }
+  .d-cmp { border: 1px solid #777; background: #fbf6e6; padding: 6px 12px; margin: 8px 0 12px; font-size: 13.5px; }
+  .d-cmp p { margin: 2px 0; } .d-cmp .lb { font-weight: 700; }
+  .d-bhead { font-size: 16px; font-weight: 700; margin: 14px 0 6px; }
+  .d-bitem { font-size: 14.5px; margin: 5px 0; padding-left: 2.6em; text-indent: -1.6em; }
+  .d-bitem .lb { font-weight: 700; }
+  .d-apx { display: flex; border: 1px solid #555; margin: 4px 0 10px; }
+  .d-apx .n { background: #1f3a64; color: #fff; padding: 4px 12px; font-weight: 700; }
+  .d-apx .t { padding: 4px 12px; font-weight: 700; font-size: 16px; }
+  .d-sheet b.em, p b.em { font-weight: 700; }
   .d-appr { display: flex; justify-content: flex-end; margin-bottom: 18px; font-size: 12px; }
   .d-appr div { border: 1px solid #777; margin-left: -1px; min-width: 78px; text-align: center; }
   .d-appr .p { background: #f1f3f6; border-bottom: 1px solid #777; padding: 2px 4px; }
@@ -247,6 +259,9 @@ const PROMPT_GUIDE = /*__PROMPT__*/"";
   let selectedType = null;
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // **굵게** 표시를 미리보기에서 굵게 보여준다(짝이 안 맞으면 별표만 지움).
+  const rich = (s) => { const parts = String(s == null ? '' : s).split('**'); if (parts.length % 2 === 0) return esc(parts.join('')); return parts.map((t, i) => (i % 2 ? '<b class="em">' + esc(t) + '</b>' : esc(t))).join(''); };
+  const plain = (s) => esc(String(s == null ? '' : s).replace(/\*\*/g, ''));
   const bracket = (s) => (s ? (/^「[\s\S]*」$/.test(s.trim()) ? s.trim() : '「' + s.trim() + '」') : '');
 
   function toast(text) {
@@ -334,16 +349,28 @@ const PROMPT_GUIDE = /*__PROMPT__*/"";
     const out = [];
     const ap = s.approval && s.approval.length ? s.approval : [{ position: '담당' }, { position: (s.team || '') + '장' }, { position: '' }];
     out.push('<div class="d-appr">' + ap.slice(0, 3).map((a) => '<div><div class="p">' + esc(a.position || ' ') + '</div><div class="nm">' + esc(a.name || '') + '</div></div>').join('') + '</div>');
+    if (s.brief) {
+      const b = s.brief;
+      out.push('<div class="d-page">요약 쪽</div>');
+      out.push('<div class="d-brief-title">' + (b.subtitle ? '<div class="s">' + plain(bracket(b.subtitle)) + '</div>' : '') + '<div class="t">' + plain(b.title) + '</div></div>');
+      if (b.compare.length) out.push('<div class="d-cmp">' + b.compare.map((c) => '<p>' + (c.label ? '<span class="lb">(' + esc(c.label) + ')</span> ' : '') + rich(c.text) + '</p>').join('') + '</div>');
+      b.sections.forEach((sec) => {
+        out.push('<div class="d-bhead">□ ' + plain(sec.title) + '</div>');
+        sec.items.forEach((it) => {
+          if (it.type === 'note') out.push('<p class="d-note">* ' + plain(it.text) + '</p>');
+          else if (it.type !== 'table') out.push('<p class="d-bitem">○ ' + (it.label ? '<span class="lb">(' + esc(it.label) + ')</span> ' : '') + rich(it.text) + '</p>');
+        });
+      });
+      out.push('<div class="d-page">본문</div>');
+    }
     out.push('<div class="d-banner"><div class="d-team">' + esc(s.team || '부서') + '</div><div class="d-titles">' +
       (s.subtitle || s.coverSubtitle ? '<div class="d-sub">' + esc(bracket(s.subtitle || s.coverSubtitle)) + '</div>' : '') +
       '<div class="d-title">' + esc(s.title || '(제목 없음)') + '</div></div></div>');
     if (s.summary) out.push('<div class="d-summary"><b>▸</b>' + esc(s.summary) + '</div>');
-    s.sections.forEach((sec, i) => {
-      out.push('<div class="d-sec"><div class="n">' + (G.ROMAN[i] || i + 1) + '</div><div class="t">' + esc(sec.title) + '</div></div>');
-      sec.items.forEach((it) => {
-        if (it.type === 'box') out.push('<p class="d-box">□ ' + (it.label ? '<span class="lb">(' + esc(it.label) + ')</span> ' : '') + esc(it.text) + '</p>');
-        else if (it.type === 'sub') out.push('<p class="d-sub-i">ㅇ ' + esc(it.text) + '</p>');
-        else if (it.type === 'note') out.push('<p class="d-note">* ' + esc(it.text) + '</p>');
+    const renderItems = (items) => items.forEach((it) => {
+        if (it.type === 'box') out.push('<p class="d-box">□ ' + (it.label ? '<span class="lb">(' + esc(it.label) + ')</span> ' : '') + rich(it.text) + '</p>');
+        else if (it.type === 'sub') out.push('<p class="d-sub-i">ㅇ ' + rich(it.text) + '</p>');
+        else if (it.type === 'note') out.push('<p class="d-note">* ' + plain(it.text) + '</p>');
         else if (it.type === 'text') out.push('<p class="d-text">' + esc(it.text) + '</p>');
         else if (it.type === 'table' && Array.isArray(it.rows)) {
           const cell = (v) => (Array.isArray(v) ? '<ul>' + v.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' : esc(v).replace(/\n/g, '<br>'));
@@ -355,6 +382,9 @@ const PROMPT_GUIDE = /*__PROMPT__*/"";
           out.push(t + '</table>');
         }
       });
+    s.sections.forEach((sec, i) => {
+      out.push('<div class="d-sec"><div class="n">' + (G.ROMAN[i] || i + 1) + '</div><div class="t">' + esc(sec.title) + '</div></div>');
+      renderItems(sec.items);
     });
     if (s.attachments && s.attachments.length) {
       const many = s.attachments.length > 1;
@@ -366,6 +396,11 @@ const PROMPT_GUIDE = /*__PROMPT__*/"";
       });
       out.push('<div class="d-attach">' + esc(lines.join('\n')) + '</div>');
     }
+    (s.appendices || []).forEach((a, i, all) => {
+      out.push('<div class="d-page">첨부 쪽</div>');
+      out.push('<div class="d-apx"><div class="n">첨부' + (all.length > 1 ? ' ' + (i + 1) : '') + '</div><div class="t">' + plain(a.title) + '</div></div>');
+      renderItems(a.items);
+    });
     $('sheet').innerHTML = out.join('');
   }
 
@@ -394,7 +429,7 @@ const PROMPT_GUIDE = /*__PROMPT__*/"";
     warnings.forEach((w) => msg(box, 'warn', w));
     const itemCount = s.sections.reduce((a, sec) => a + sec.items.length, 0);
     const typeName = spec.docType && D.byId(spec.docType) ? D.byId(spec.docType).name + ' · ' : '';
-    $('stat').textContent = typeName + s.sections.length + '개 장 · ' + itemCount + '개 항목';
+    $('stat').textContent = typeName + (s.brief ? '요약 쪽 · ' : '') + s.sections.length + '개 장 · ' + itemCount + '개 항목' + (s.appendices && s.appendices.length ? ' · 첨부 ' + s.appendices.length + '쪽' : '');
     if (!errors.length) {
       msg(box, 'ok', '생성할 수 있습니다. (' + templateName + ')');
       currentSpec = spec;

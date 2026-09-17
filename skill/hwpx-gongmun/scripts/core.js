@@ -180,7 +180,33 @@
     return out;
   }
 
-  const fill = (xml, map) => xml.replace(/\{\{([A-Z0-9_]+)\}\}/g, (_, k) => esc(map[k]));
+  // **굵게** 표시는 강조 칸이 있는 원형에서만 굵게 바뀐다. 그 밖의 자리에서는 별표만 지운다.
+  const stripEm = (s) => String(s == null ? '' : s).replace(/\*\*/g, '');
+  const fill = (xml, map) => xml.replace(/\{\{([A-Z0-9_]+)\}\}/g, (_, k) => esc(stripEm(map[k])));
+
+  function splitEmphasis(value) {
+    const parts = String(value == null ? '' : value).split('**');
+    if (parts.length % 2 === 0) return [{ t: parts.join(''), em: false }]; // 짝이 안 맞으면 강조 없이
+    return parts.map((t, i) => ({ t, em: i % 2 === 1 })).filter((p) => p.t);
+  }
+
+  // 원형 안의 {{KEY}} 글자 칸을 강조 구간마다 보통/굵게 칸으로 쪼갠다.
+  // 굵은 글자모양은 같은 원형 안의 {{EMKEY}} 칸에서 가져오고, 그 칸 자체는 지운다.
+  function richFill(xml, key, emKey, value) {
+    const runRe = (k) => new RegExp('<hp:run charPrIDRef="(\\d+)"><hp:t>([^<]*?)\\{\\{' + k + '\\}\\}([^<]*?)</hp:t></hp:run>');
+    const km = xml.match(runRe(key));
+    if (!km) return xml;
+    const em = emKey ? xml.match(runRe(emKey)) : null;
+    let out = em ? xml.replace(em[0], '') : xml;
+    const segs = splitEmphasis(value);
+    const runs = (segs.length ? segs : [{ t: '', em: false }]).map((sg, i, all) => {
+      const cp = sg.em && em ? em[1] : km[1];
+      const pre = i === 0 ? km[2] : '';
+      const post = i === all.length - 1 ? km[3] : '';
+      return '<hp:run charPrIDRef="' + cp + '"><hp:t>' + pre + esc(sg.t) + post + '</hp:t></hp:run>';
+    });
+    return out.replace(km[0], runs.join(''));
+  }
 
   // linesegarray 는 한글이 저장해 둔 줄 배치 결과다. 글자를 바꾼 문단에 옛 값이 남으면 한글이 그 값을 믿고
   // 긴 문장을 한 줄에 겹쳐 그린다. 지워 두면 열 때 다시 배치한다.
@@ -190,6 +216,8 @@
   const renumber = (xml) => xml.replace(/<hp:tbl id="\d+"/g, () => '<hp:tbl id="' + (idSeq++) + '"');
 
   const clone = (xml, map) => renumber(normLines(fill(xml, map)));
+  const cloneRich = (xml, key, emKey, value, map) =>
+    renumber(normLines(fill(richFill(xml, key, emKey, value), Object.assign({ [key]: value, [emKey]: '' }, map || {}))));
 
   /* ------------------------------------------------------------------ */
   /* 서식 원형 읽기                                                       */
@@ -205,6 +233,18 @@
     para: 'PARA',
     blank: 'BLANK',
     table: 'TH',
+    // 요약 쪽 (표지 다음 [요약] 1쪽)
+    briefTitle: 'BRIEF_TITLE',
+    briefTitleGap: 'BRIEF_TGAP',
+    briefCompare: 'CMP_TEXT',
+    briefCompareGap: 'BRIEF_BGAP',
+    briefHead: 'BRIEF_HEAD',
+    briefHeadGap: 'BRIEF_HGAP',
+    briefItem: 'BRIEF_TEXT',
+    briefItemGap: 'BRIEF_IGAP',
+    briefNote: 'BRIEF_NOTE',
+    // 첨부 쪽 머리띠 ("첨부 1 | 제목")
+    appendixHeader: 'APX_TITLE',
   };
 
   function parseTemplate(files) {
@@ -231,7 +271,28 @@
     }).join('') + xml.slice(mi > 0 ? paras[mi - 1].end : 0, paras[mi].start);
     const tail = xml.slice(paras[paras.length - 1].end);
     const placeholders = Array.from(new Set(Array.from(head.matchAll(/\{\{([A-Z0-9_]+)\}\}/g), (m) => m[1])));
-    return { head, tail, proto, placeholders };
+
+    // 요약 쪽을 끼울 자리: 본문 머리띠 표({{HEADER_SUBTITLE}})가 든 글자 칸 바로 앞.
+    // 기본 서식은 표지 로고와 본문 머리띠가 한 문단에 있으므로 그 문단을 둘로 나누고,
+    // 뒤쪽 문단(본문 머리띠)은 새 쪽에서 시작하게 한다.
+    let headBefore = null, headAfter = null;
+    const hs = head.indexOf('{{HEADER_SUBTITLE}}');
+    if (hs >= 0) {
+      const runAt = head.lastIndexOf('<hp:run', head.lastIndexOf('<hp:tbl', hs));
+      const owner = topParagraphs(head).find((p) => p.start <= runAt && runAt < p.end);
+      if (runAt >= 0 && owner) {
+        const open = owner.xml.match(/^<hp:p\b[^>]*>/)[0];
+        const firstRun = owner.start + open.length;
+        if (runAt === firstRun) {
+          headBefore = head.slice(0, owner.start);
+          headAfter = open.replace(/pageBreak="\d"/, 'pageBreak="1"') + head.slice(runAt);
+        } else {
+          headBefore = head.slice(0, runAt) + '</hp:p>';
+          headAfter = open.replace(/pageBreak="\d"/, 'pageBreak="1"') + head.slice(runAt);
+        }
+      }
+    }
+    return { head, headBefore, headAfter, tail, proto, placeholders };
   }
 
   /* ------------------------------------------------------------------ */
@@ -287,7 +348,72 @@
     }));
     s.attachments = [].concat(s.attachments || []).filter(Boolean).map(String);
     s.approval = (s.approval || []).map((a) => (typeof a === 'string' ? { position: a, name: '' } : a));
+
+    // 요약 쪽: "brief": { title, subtitle, compare: [...], sections: [{ title, items }] }
+    if (s.brief) {
+      const b = s.brief === true ? {} : s.brief;
+      const baseTitle = String(b.title || s.title || '').trim();
+      s.brief = {
+        title: /\(요약\)\s*$/.test(baseTitle) ? baseTitle : baseTitle + '(요약)',
+        subtitle: b.subtitle != null ? String(b.subtitle) : String(s.subtitle || ''),
+        compare: [].concat(b.compare || []).filter(Boolean).map((c) => {
+          if (typeof c !== 'string') return { label: String(c.label || '').replace(/^\(|\)$/g, ''), text: String(c.text || '') };
+          const p = parseItemString(c);
+          return { label: p.label || '', text: p.text || '' };
+        }),
+        sections: (b.sections || []).map((sec) => ({
+          title: typeof sec === 'string' ? sec : (sec.title || ''),
+          items: normalizeItems(typeof sec === 'string' ? [] : (sec.items || [])),
+        })),
+      };
+    } else {
+      delete s.brief;
+    }
+
+    // 첨부 쪽: "appendices": [{ title, items }] — 본문 뒤 새 쪽마다 "첨부 N | 제목" 머리띠
+    s.appendices = [].concat(s.appendices || []).filter(Boolean).map((a) => ({
+      title: typeof a === 'string' ? a : (a.title || ''),
+      items: normalizeItems(typeof a === 'string' ? [] : (a.items || a.content || [])),
+    }));
     return s;
+  }
+
+  /* 날짜·요일 검산: "2026. 9. 16.(수)", "’26. 9. 16.(수)", "9. 16.(수)" 형식 */
+  const WEEKDAYS = '일월화수목금토';
+  function checkWeekdays(textValue, defaultYear) {
+    const out = [];
+    const re = /(?:(\d{4})\.\s*|[’'‘](\d{2})\.\s*)?(\d{1,2})\.\s*(\d{1,2})\.?\s*\(([일월화수목금토])\)/g;
+    for (const m of String(textValue).matchAll(re)) {
+      const y = m[1] ? +m[1] : m[2] ? 2000 + +m[2] : defaultYear;
+      const mo = +m[3], d = +m[4];
+      if (!y || mo < 1 || mo > 12 || d < 1 || d > 31) continue;
+      const dt = new Date(Date.UTC(y, mo - 1, d));
+      if (dt.getUTCMonth() !== mo - 1) { out.push('"' + m[0] + '" 는 없는 날짜입니다.'); continue; }
+      const real = WEEKDAYS[dt.getUTCDay()];
+      if (real !== m[5]) out.push('"' + m[0] + '" 의 요일이 맞지 않습니다(' + y + '년 기준 ' + real + '요일).');
+    }
+    return out;
+  }
+
+  function collectTexts(s) {
+    const texts = [];
+    const push = (v) => { if (v != null && v !== '') texts.push(String(v)); };
+    const items = (list) => (list || []).forEach((it) => {
+      push(it.label); push(it.text);
+      if (it.type === 'table') {
+        (it.columns || []).forEach(push);
+        (it.rows || []).forEach((r) => [].concat(r).forEach((c) => [].concat(c).forEach(push)));
+      }
+    });
+    [s.title, s.subtitle, s.summary].forEach(push);
+    (s.sections || []).forEach((sec) => { push(sec.title); items(sec.items); });
+    if (s.brief) {
+      push(s.brief.title); push(s.brief.subtitle);
+      s.brief.compare.forEach((c) => { push(c.label); push(c.text); });
+      s.brief.sections.forEach((sec) => { push(sec.title); items(sec.items); });
+    }
+    (s.appendices || []).forEach((a) => { push(a.title); items(a.items); });
+    return texts;
   }
 
   function validateSpec(spec) {
@@ -296,9 +422,18 @@
     const warnings = [];
     if (!s.title || !String(s.title).trim()) errors.push('title(문서 제목)이 비어 있습니다.');
     if (!s.sections.length) errors.push('sections(본문 장)가 하나도 없습니다.');
-    s.sections.forEach((sec, i) => {
-      const where = (ROMAN[i] || i + 1) + '장';
-      if (!sec.title) errors.push(where + ': title(장 제목)이 비어 있습니다.');
+    const groups = s.sections.map((sec, i) => ({ where: (ROMAN[i] || i + 1) + '장', sec }));
+    if (s.brief) {
+      if (!s.brief.sections.length) errors.push('brief(요약 쪽)에 sections 가 없습니다.');
+      s.brief.sections.forEach((sec, i) => groups.push({ where: '요약 ' + (i + 1) + '번째 대분류', sec }));
+      s.brief.compare.forEach((c, i) => { if (!c.text) errors.push('요약 비교 상자 ' + (i + 1) + '번째 줄: text 가 비어 있습니다.'); });
+    }
+    s.appendices.forEach((a, i) => {
+      if (!a.title) errors.push('첨부 ' + (i + 1) + ': title(첨부 제목)이 비어 있습니다.');
+      groups.push({ where: '첨부 ' + (i + 1), sec: a });
+    });
+    groups.forEach(({ where, sec }) => {
+      if (!sec.title) errors.push(where + ': title(제목)이 비어 있습니다.');
       if (!sec.items.length) warnings.push(where + ' "' + sec.title + '": 항목이 없습니다.');
       sec.items.forEach((it, j) => {
         const at = where + ' ' + (j + 1) + '번째 항목';
@@ -318,6 +453,19 @@
     });
     if (!s.summary) warnings.push('summary(요약 한 줄)가 없습니다.');
     if (!s.team) warnings.push('team(작성 부서)이 없습니다.');
+
+    // 결재 전에 사람이 흔히 놓치는 것들
+    const year = +((String(s.year || s.date || '').match(/\d{4}/) || [])[0] || new Date().getFullYear());
+    const texts = collectTexts(s);
+    const dateIssues = new Set();
+    texts.forEach((t) => checkWeekdays(t, year).forEach((w) => dateIssues.add(w)));
+    dateIssues.forEach((w) => warnings.push('날짜 검산: ' + w));
+    const doubleSpace = texts.filter((t) => /\S {2,}\S/.test(t.replace(/^\s+/, '')));
+    if (doubleSpace.length) warnings.push('띄어쓰기 두 칸 이상: "' + doubleSpace[0].slice(0, 40) + '" 외 ' + (doubleSpace.length - 1) + '곳');
+    const blanks = texts.filter((t) => /[○△]{2,}/.test(t)).length;
+    if (blanks) warnings.push('채워야 할 자리(○○·△△)가 ' + blanks + '곳 남아 있습니다.');
+    const oddEm = texts.filter((t) => t.split('**').length % 2 === 0);
+    if (oddEm.length) warnings.push('굵게 표시(**)의 짝이 맞지 않는 곳: "' + oddEm[0].slice(0, 40) + '"');
     return { errors, warnings, spec: s };
   }
 
@@ -439,34 +587,102 @@
     }, s.fields || {});
   }
 
+  const PAGE_NUM_HIDE = '<hp:ctrl><hp:pageHiding hideHeader="0" hideFooter="0" hideMasterPage="0" hideBorder="0" hideFill="0" hidePageNum="1"/></hp:ctrl>';
+
+  function buildCompare(proto, lines) {
+    // 표 안쪽 문단 하나만 잡는다(바깥 문단의 여는 태그부터 잡지 않도록 중간에 다른 문단 태그를 허용하지 않음).
+    const lineRe = /<hp:p\b[^>]*>(?:(?!<\/?hp:p\b)[\s\S])*?\{\{CMP_TEXT\}\}(?:(?!<\/?hp:p\b)[\s\S])*?<\/hp:p>/;
+    const lp = proto.match(lineRe);
+    if (!lp) throw new Error('요약 비교 상자 원형을 해석할 수 없습니다.');
+    const body = lines.map((c) => {
+      let x = richFill(lp[0], 'CMP_TEXT', 'CMP_EM', c.text);
+      x = fill(x, { CMP_LABEL: c.label, CMP_TEXT: c.text, CMP_EM: '' });
+      if (!c.label) x = x.replace(/<hp:t>\(\) <\/hp:t>/, '<hp:t></hp:t>');
+      return normLines(x);
+    }).join('');
+    const h = Math.max(1800 * lines.length, 1800);
+    return renumber(normLines(proto.replace(lp[0], body))
+      .replace(/(<hp:sz width="\d+" widthRelTo="\w+" height=")\d+/, '$1' + h)
+      .replace(/(<hp:cellSz width="\d+" height=")\d+/, '$1' + h));
+  }
+
+  function buildBriefXml(b, tpl) {
+    const P = tpl.proto;
+    const missing = ['briefTitle', 'briefHead', 'briefItem'].filter((k) => !P[k]);
+    if (missing.length) {
+      throw new Error('이 서식에는 요약 쪽 원형이 없습니다(' + missing.map((k) => '{{' + PROTO_KEYS[k] + '}}').join(', ') + '). 기본 서식을 쓰거나 brief 를 빼세요.');
+    }
+    const out = [];
+    const gap = (k) => { if (P[k]) out.push(clone(P[k], {})); };
+
+    let title = P.briefTitle;
+    const sub = b.subtitle ? wrapBracket(b.subtitle) : '';
+    if (!sub) title = title.replace('{{BRIEF_SUBTITLE}}<hp:lineBreak/>', '{{BRIEF_SUBTITLE}}');
+    out.push(clone(title, { BRIEF_SUBTITLE: sub, BRIEF_TITLE: b.title }));
+    gap('briefTitleGap');
+    if (b.compare.length && P.briefCompare) {
+      out.push(buildCompare(P.briefCompare, b.compare));
+      gap('briefCompareGap');
+    }
+
+    let hidden = false;
+    b.sections.forEach((sec, si) => {
+      if (si > 0) gap('briefHeadGap');
+      out.push(clone(P.briefHead, { BRIEF_HEAD: sec.title }));
+      gap('briefHeadGap');
+      sec.items.forEach((it, ii) => {
+        const next = sec.items[ii + 1];
+        if (it.type === 'note') {
+          out.push(P.briefNote ? clone(P.briefNote, { BRIEF_NOTE: it.text }) : clone(P.note, { NOTE: it.text }));
+          if (next) gap('briefItemGap');
+          return;
+        }
+        if (it.type === 'table') {
+          if (!P.table) throw new Error('서식에 표 원형({{TH}})이 없어 표를 만들 수 없습니다.');
+          out.push(buildTable(P.table, it));
+          if (next) gap('briefItemGap');
+          return;
+        }
+        let x = cloneRich(P.briefItem, 'BRIEF_TEXT', 'BRIEF_EM', it.text, { BRIEF_LABEL: it.label || '' });
+        if (!it.label) x = x.replace(/<hp:t>\(\) <\/hp:t>/, '<hp:t></hp:t>');
+        if (!hidden) { x = x.replace('</hp:t></hp:run>', '</hp:t>' + PAGE_NUM_HIDE + '</hp:run>'); hidden = true; }
+        out.push(x);
+        if (next && next.type !== 'note') gap('briefItemGap');
+      });
+    });
+    return out.join('');
+  }
+
   function buildSectionXml(spec, tpl) {
     const s = normalizeSpec(spec);
     const P = tpl.proto;
     const out = [];
     const blank = () => out.push(clone(P.blank, {}));
 
+    const renderItems = (items) => items.forEach((it, ii) => {
+      if (it.type === 'box') {
+        if (ii > 0) blank();
+        if (it.label) out.push(cloneRich(P.box, 'BOX_TEXT', 'BOX_EM', it.text, { BOX_LABEL: it.label }));
+        else if (P.plain) out.push(cloneRich(P.plain, 'PLAIN', 'PLAIN_EM', it.text));
+        else out.push(cloneRich(P.box, 'BOX_TEXT', 'BOX_EM', it.text, { BOX_LABEL: '' }).replace('<hp:t>()</hp:t>', '<hp:t></hp:t>'));
+      } else if (it.type === 'sub') {
+        if (P.sub) out.push(cloneRich(P.sub, 'SUB', 'SUB_EM', it.text));
+        else out.push(clone(P.para || P.plain, { PARA: '   ㅇ ' + it.text, PLAIN: 'ㅇ ' + it.text }));
+      } else if (it.type === 'note') {
+        out.push(clone(P.note, { NOTE: it.text }));
+      } else if (it.type === 'text') {
+        if (ii > 0) blank();
+        out.push(clone(P.para || P.plain, { PARA: it.text, PLAIN: it.text }));
+      } else if (it.type === 'table') {
+        if (!P.table) throw new Error('서식에 표 원형({{TH}})이 없어 표를 만들 수 없습니다.');
+        out.push(buildTable(P.table, it));
+      }
+    });
+
     s.sections.forEach((sec, si) => {
       out.push(clone(P.sectionHeader, { SEC_NUM: ROMAN[si] || String(si + 1), SEC_TITLE: sec.title }));
       blank();
-      sec.items.forEach((it, ii) => {
-        if (it.type === 'box') {
-          if (ii > 0) blank();
-          if (it.label) out.push(clone(P.box, { BOX_LABEL: it.label, BOX_TEXT: it.text }));
-          else if (P.plain) out.push(clone(P.plain, { PLAIN: it.text }));
-          else out.push(clone(P.box, { BOX_LABEL: '', BOX_TEXT: it.text }).replace('<hp:t>()</hp:t>', '<hp:t></hp:t>'));
-        } else if (it.type === 'sub') {
-          if (P.sub) out.push(clone(P.sub, { SUB: it.text }));
-          else out.push(clone(P.para || P.plain, { PARA: '   ㅇ ' + it.text, PLAIN: 'ㅇ ' + it.text }));
-        } else if (it.type === 'note') {
-          out.push(clone(P.note, { NOTE: it.text }));
-        } else if (it.type === 'text') {
-          if (ii > 0) blank();
-          out.push(clone(P.para || P.plain, { PARA: it.text, PLAIN: it.text }));
-        } else if (it.type === 'table') {
-          if (!P.table) throw new Error('서식에 표 원형({{TH}})이 없어 표를 만들 수 없습니다.');
-          out.push(buildTable(P.table, it));
-        }
-      });
+      renderItems(sec.items);
       blank();
     });
 
@@ -482,7 +698,26 @@
       });
     }
 
-    return fill(tpl.head, headFields(s)) + out.join('') + tpl.tail;
+    if (s.appendices.length) {
+      if (!P.appendixHeader) throw new Error('이 서식에는 첨부 쪽 원형({{APX_TITLE}})이 없습니다. 기본 서식을 쓰거나 appendices 를 빼세요.');
+      s.appendices.forEach((a, ai) => {
+        const num = s.appendices.length > 1 ? '첨부 ' + (ai + 1) : '첨부';
+        out.push(clone(P.appendixHeader, { APX_NUM: num, APX_TITLE: a.title }));
+        blank();
+        renderItems(a.items);
+        blank();
+      });
+    }
+
+    const hf = headFields(s);
+    let head;
+    if (s.brief) {
+      const brief = buildBriefXml(s.brief, tpl);
+      head = tpl.headBefore != null ? fill(tpl.headBefore, hf) + brief + fill(tpl.headAfter, hf) : fill(tpl.head, hf) + brief;
+    } else {
+      head = fill(tpl.head, hf);
+    }
+    return head + out.join('') + tpl.tail;
   }
 
   function previewText(sectionXml) {

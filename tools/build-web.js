@@ -12,7 +12,7 @@ const core = fs.readFileSync(path.join(skill, 'scripts', 'core.js'), 'utf8');
 const doctypes = fs.readFileSync(path.join(skill, 'scripts', 'doctypes.js'), 'utf8').split('/* ---------------- 명령줄 ---------------- */')[0];
 const template = fs.readFileSync(path.join(skill, 'templates', 'default.hwpx')).toString('base64');
 const example = JSON.parse(fs.readFileSync(path.join(skill, 'examples', 'good-station.json'), 'utf8'));
-const prompt = read('web-src/prompt.md');
+const prompt = read('skill/hwpx-gongmun/references/writing-guide.md');
 
 const safeJs = (s) => s.replace(/<\/script/gi, '<\\/script');
 let html = read('web-src/page.html');
